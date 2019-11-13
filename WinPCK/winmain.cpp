@@ -50,7 +50,9 @@ void TInstApp::InitWindow(void)
 
 }
 
-TInstDlg::TInstDlg(LPTSTR cmdLine) : TDlg(IDD_MAIN)//, staticText(this)
+TInstDlg::TInstDlg(LPTSTR cmdLine) :
+	TDlg(IDD_MAIN),
+	m_logdlg(this)
 {}
 
 TInstDlg::~TInstDlg() {}
@@ -63,13 +65,16 @@ BOOL TInstDlg::EvCreate(LPARAM lParam)
 
 	//InstallExceptionFilter(THIS_NAME, "%s\r\n异常信息已被保存到:\r\n%s\r\n");
 
-	GetWindowRect(&rect);
 	int		cx = ::GetSystemMetrics(SM_CXFULLSCREEN), cy = ::GetSystemMetrics(SM_CYFULLSCREEN);
-	int		xsize = rect.right - rect.left, ysize = rect.bottom - rect.top;
+
+	//GetWindowRect(&rect);
+	//int		xsize = rect.right - rect.left, ysize = rect.bottom - rect.top;
+
+	int		xsize = 1100, ysize = 800;
 
 	::SetClassLong(hWnd, GCL_HICON,
 		(LONG_PTR)::LoadIcon(TApp::GetInstance(), (LPCTSTR)IDI_ICON_APP));
-	MoveWindow((cx - xsize) / 2, (cy - ysize) / 2, xsize, ysize, TRUE);
+	//MoveWindow((cx - xsize) / 2, (cy - ysize) / 2, xsize, ysize, TRUE);
 
 	//界面和数据初始化
 	SetWindowTextA(THIS_MAIN_CAPTION);
@@ -88,6 +93,8 @@ BOOL TInstDlg::EvCreate(LPARAM lParam)
 	//显示窗口
 	Show();
 
+	MoveWindow((cx - xsize) / 2, (cy - ysize) / 2, xsize, ysize, TRUE);
+
 	return	TRUE;
 }
 
@@ -97,23 +104,27 @@ BOOL TInstDlg::EvClose()
 
 	if(bGoingToExit)return FALSE;
 
-	SetStatusBarText(0, GetLoadStr(IDS_STRING_EXITING));
+	//SetStatusBarText(0, GetLoadStr(IDS_STRING_EXITING));
+	SetStatusBarInfo(GetLoadStr(IDS_STRING_EXITING));
 
-	if(lpPckParams->cVarParams.bThreadRunning) {
+	if(pck_isThreadWorking()) {
 		if(IDNO == MessageBox(GetLoadStr(IDS_STRING_ISEXIT), GetLoadStr(IDS_STRING_ISEXITTITLE), MB_YESNO | MB_ICONEXCLAMATION | MB_DEFBUTTON2))return FALSE;
 
 		bGoingToExit = TRUE;
-		lpPckParams->cVarParams.bThreadRunning = FALSE;
+		pck_forceBreakThreadWorking();
 		return FALSE;
 	}
 
 	ShowWindow(SW_HIDE);
 
+	if (nullptr != m_pTaskBarlist)
+		m_pTaskBarlist->Release();
+
 	OleUninitialize();
 
 	ListView_Uninit();
 
-	delete logdlg;
+	//delete logdlg;
 
 	::PostQuitMessage(0);
 	return FALSE;
@@ -171,6 +182,9 @@ BOOL TInstDlg::EvCommand(WORD wNotifyCode, WORD wID, LPARAM hwndCtl)
 	case ID_MENU_REBUILD:
 		MenuRebuild(wID);
 		break;
+	case ID_MENU_SIMPLIFY:
+		MenuStrip();
+		break;
 	case ID_MENU_COMPRESS_OPT:
 		MenuCompressOpt();
 		break;
@@ -205,7 +219,7 @@ BOOL TInstDlg::EvCommand(WORD wNotifyCode, WORD wID, LPARAM hwndCtl)
 		MenuAbout();
 		break;
 	case ID_MENU_LOG:
-		logdlg->Show();
+		m_logdlg.Show();
 		break;
 	case ID_LISTVIEW_ENTER:
 		ListViewEnter();
@@ -220,17 +234,6 @@ BOOL TInstDlg::EvCommand(WORD wNotifyCode, WORD wID, LPARAM hwndCtl)
 	return	FALSE;
 }
 
-VOID TInstDlg::SetStatusBarText(int	iPart, LPCSTR	lpszText)
-{
-	SendDlgItemMessageA(IDC_STATUS, SB_SETTEXTA, iPart, (LPARAM)lpszText);
-	SendDlgItemMessageA(IDC_STATUS, SB_SETTIPTEXTA, iPart, (LPARAM)lpszText);
-}
-
-VOID TInstDlg::SetStatusBarText(int	iPart, LPCWSTR	lpszText)
-{
-	SendDlgItemMessageW(IDC_STATUS, SB_SETTEXTW, iPart, (LPARAM)lpszText);
-	SendDlgItemMessageW(IDC_STATUS, SB_SETTIPTEXTW, iPart, (LPARAM)lpszText);
-}
 
 BOOL TInstDlg::EvNotify(UINT ctlID, NMHDR *pNmHdr)
 {
@@ -257,11 +260,12 @@ BOOL TInstDlg::EventButton(UINT uMsg, int nHitTest, POINTS pos)
 			m_isSearchWindow = FALSE;
 
 			if(IsValidWndAndGetPath(szPath, TRUE)) {
-				if(m_cPckCenter.IsValidPck()) {
-					if(!lpPckParams->cVarParams.bThreadRunning) {
-						//mt_MaxMemoryCount = 0;
-						lpPckParams->cVarParams.dwMTMemoryUsed = 0;
-						SetCurrentDirectoryW(szPath);
+				if(pck_IsValidPck()) {
+					if(!pck_isThreadWorking()) {
+
+						wcscpy_s(m_CurrentPath, szPath);
+						pck_setMTMaxMemory(0);
+
 						_beginthread(ToExtractSelectedFiles, 0, this);
 					}
 				}
@@ -288,24 +292,19 @@ BOOL TInstDlg::EvSize(UINT fwSizeType, WORD nWidth, WORD nHeight)
 {
 	HWND	hList = GetDlgItem(IDC_LIST);
 	HWND	hPrgs = GetDlgItem(IDC_PROGRESS);
+	HWND	hToolbar = GetDlgItem(IDC_TOOLBAR);
 
-	::SetWindowPos(GetDlgItem(IDC_TOOLBAR), NULL, 0, 0, nWidth, 58, SWP_NOMOVE | SWP_NOZORDER | SWP_NOREDRAW);
-	::SetWindowPos(hPrgs, NULL, 0, nHeight - 36, nWidth, 13, SWP_NOZORDER);
-	::SetWindowPos(hList, NULL, 0, 0, nWidth, nHeight - 97, SWP_NOZORDER | SWP_NOMOVE);
-	ListView_SetColumnWidth(hList, 0, nWidth - 257);
+	RECT rectToolbar;
 
+	GetClientRect(hToolbar, &rectToolbar);
+
+	::SetWindowPos(hToolbar, NULL, 0, 0, nWidth, rectToolbar.bottom, SWP_NOMOVE | SWP_NOZORDER | SWP_NOREDRAW);
 	::SetWindowPos(GetDlgItem(IDC_STATUS), NULL, 0, nHeight - 22, nWidth, 22, SWP_NOZORDER);
 
+	::SetWindowPos(hPrgs, NULL, 0, nHeight - 36, nWidth, 13, SWP_NOZORDER);
 
-	//MoveWindow(arrHwnd[ID_LIST], 0, 0, x , y/2 , TRUE);
-	//ListView_SetColumnWidth(arrHwnd[ID_LIST], 0, x/2);
-	//ListView_SetColumnWidth(arrHwnd[ID_LIST], 1, x/8);
-	//ListView_SetColumnWidth(arrHwnd[ID_LIST], 2, x/3);
-
-	//MoveWindow(arrHwnd[ID_EDIT_CRC32], 0, y/2 , x , y/2 - 30, TRUE);
-	//MoveWindow(arrHwnd[ID_PROGRESS], 1 , y - 25 , x - 150 , 20 , TRUE);
-	//MoveWindow(arrHwnd[ID_COMBO], x - 145 , y - 25 , 80 , 20 , TRUE);
-	//MoveWindow(arrHwnd[ID_BTN_CALC], x - 63 , y - 28, 61, 25, TRUE);
+	::SetWindowPos(hList, NULL, 0, rectToolbar.bottom + 6, nWidth, nHeight - (36 + rectToolbar.bottom + 6), SWP_NOZORDER);
+	ListView_SetColumnWidth(hList, 0, nWidth - 257);
 
 	return TRUE;
 }
@@ -404,26 +403,26 @@ BOOL TInstDlg::EvDrawItem(UINT ctlID, DRAWITEMSTRUCT *lpDis)
 BOOL TInstDlg::EvDropFiles(HDROP hDrop)
 {
 
-	if(lpPckParams->cVarParams.bThreadRunning)goto END_DROP;
+	if(pck_isThreadWorking())goto END_DROP;
 
-	TCHAR	szFirstFile[MAX_PATH];
+	wchar_t	szFirstFile[MAX_PATH];
 
-	DWORD dwDropFileCount = DragQueryFile(hDrop, 0xFFFFFFFF, NULL, 0);
+	DWORD dwDropFileCount = DragQueryFileW(hDrop, 0xFFFFFFFF, NULL, 0);
 
 	if(0 == dwDropFileCount)goto END_DROP;
 
 	if(1 == dwDropFileCount) {
-		if(!m_cPckCenter.IsValidPck()) {
+		if(!pck_IsValidPck()) {
 			size_t	nFirstFileLength;
-			DragQueryFile(hDrop, 0, szFirstFile, MAX_PATH);
-			nFirstFileLength = _tcsnlen(szFirstFile, MAX_PATH);
+			DragQueryFileW(hDrop, 0, szFirstFile, MAX_PATH);
+			nFirstFileLength = wcsnlen(szFirstFile, MAX_PATH);
 
 			if(7 <= nFirstFileLength) {
-				if(0 == lstrcmpi(szFirstFile + nFirstFileLength - 4, TEXT(".pck"))) {
+				if(0 == lstrcmpiW(szFirstFile + nFirstFileLength - 4, L".pck")) {
 
 					OpenPckFile(szFirstFile);
 					goto END_DROP;
-				} else if(0 == lstrcmpi(szFirstFile + nFirstFileLength - 4, TEXT(".zup"))) {
+				} else if(0 == lstrcmpiW(szFirstFile + nFirstFileLength - 4, L".zup")) {
 
 					OpenPckFile(szFirstFile);
 					goto END_DROP;
@@ -441,8 +440,8 @@ BOOL TInstDlg::EvDropFiles(HDROP hDrop)
 
 	for(DWORD i = 0; i < dwDropFileCount; i++) {
 
-		TCHAR szFile[MAX_PATH];
-		DragQueryFile(hDrop, i, szFile, MAX_PATH);
+		wchar_t szFile[MAX_PATH];
+		DragQueryFileW(hDrop, i, szFile, MAX_PATH);
 		m_lpszFilePath.push_back(szFile);
 	}
 
@@ -453,25 +452,4 @@ END_DROP:
 	DragFinish(hDrop);
 	DragAcceptFiles(hWnd, TRUE);
 	return	TRUE;
-}
-
-BOOL TInstDlg::EventUser(UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	TCHAR szPrintf[256];
-
-	switch(uMsg) {
-	case WM_FRESH_MAIN_CAPTION:
-
-		if(wParam) {
-			_stprintf_s(szPrintf, TEXT("%s - %s"), TEXT(THIS_MAIN_CAPTION), m_cPckCenter.GetCurrentVersionName());
-			SetWindowText(szPrintf);
-		} else {
-			SetWindowTextA(THIS_MAIN_CAPTION);
-		}
-
-		break;
-
-	}
-
-	return FALSE;
 }

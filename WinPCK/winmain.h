@@ -1,16 +1,14 @@
 
-#include "PckControlCenter.h"
+#include "globals.h"
+#include "pck_handle.h"
 #include "miscdlg.h"
-#include "PckClassLog.h"
-
+#include "tLogDlg.h"
+#include <Shobjidl.h>
 
 class TInstDlg : public TDlg
 {
 protected:
-	//TSubClassCtl	staticText;
-	//TInstSheet		*propertySheet;
-	//InstallCfg		cfg;
-	TLogDlg			*logdlg;
+	TLogDlg			m_logdlg;
 
 public:
 	TInstDlg(LPTSTR cmdLine);
@@ -32,20 +30,6 @@ public:
 	virtual BOOL	EvMouseMove(UINT fwKeys, POINTS pos);
 
 	virtual BOOL	EvSize(UINT fwSizeType, WORD nWidth, WORD nHeight);
-	virtual BOOL	EventUser(UINT uMsg, WPARAM wParam, LPARAM lParam);
-
-	//virtual BOOL	EventKey(UINT uMsg, int nVirtKey, LONG lKeyData);
-
-	//virtual BOOL	EvSysCommand(WPARAM uCmdType, POINTS pos);
-	//virtual BOOL	
-#if 0
-	virtual BOOL	EvNcDestroy(void);
-#endif
-
-	//BOOL	RunAsAdmin(BOOL is_imme);
-	//void	ChangeMode(void);
-
-
 
 //用户变量
 private:
@@ -55,47 +39,41 @@ private:
 
 	BOOL	m_isListviewRenaming;
 
+	int		m_iListHotItem;	//当前鼠标在listview上的选中数据行
 
-	CPckControlCenter	m_cPckCenter;
-	CPckClassLog		m_PckLog;
-
-	LPPCK_PATH_NODE		m_currentNodeOnShow;	/*m_lpPckNode, */
-
-	LPPCK_RUNTIME_PARAMS	lpPckParams;
+	const PCK_UNIFIED_FILE_ENTRY*	m_currentNodeOnShow;
 
 	BOOL	bGoingToExit;
-	char	m_szStrToSearch[256];
+	wchar_t	m_szStrToSearch[256];
 
-	///addmode
-	vector<tstring>	m_lpszFilePath;
+	//addmode
+	vector<wstring>	m_lpszFilePath;
 
 	//用于找窗口的变量
 	BOOL	m_isSearchWindow;
 
 	HCURSOR	m_hCursorOld, m_hCursorAllow, m_hCursorNo;
 
-	struct
-	{
-		TCHAR		szPaths[MAX_PATH];
-		TCHAR*	lpszDirNames[127];
-		int			nDirCount;
-	}m_PathDirs;
+	wchar_t		m_FolderBrowsed[MAX_PATH];
 
 	HIMAGELIST	m_imageList;
 	_inline BOOL EnableButton(UINT buttonID, BOOL enable) { return (BOOL)(SendDlgItemMessage(IDC_TOOLBAR, TB_ENABLEBUTTON, buttonID, MAKELONG(enable, 0))); }
 
 	//Timer String
-	TCHAR		szTimerProcessingFormatString[64];
-	TCHAR		szTimerProcessedFormatString[64];
+	wchar_t		szTimerProcessingFormatString[64];
+	wchar_t		szTimerProcessedFormatString[64];
+
+	//任务栏进度
+	ITaskbarList3* m_pTaskBarlist = nullptr;
 
 	//用户函数
 private:
 
 	//winmain.cpp
-	VOID SetStatusBarText(int iPart, LPCSTR lpszText);
-	VOID SetStatusBarText(int iPart, LPCWSTR lpszText);
+
 	BOOL IsValidWndAndGetPath(wchar_t * szPath, BOOL isGetPath = FALSE);
 	void RefreshProgress();
+	TCHAR* BuildSaveDlgFilterString();
 
 
 	//threadproc.cpp
@@ -103,6 +81,7 @@ private:
 	static VOID UpdatePckFile(VOID *pParam);
 	static VOID RenamePckFile(VOID *pParam);
 	static VOID RebuildPckFile(VOID	*pParam);
+	static VOID StripPckFile(VOID *pParam);
 	static VOID CreateNewPckFile(VOID *pParam);
 	static VOID ToExtractAllFiles(VOID *pParam);
 	static VOID ToExtractSelectedFiles(VOID	*pParam);
@@ -110,27 +89,31 @@ private:
 
 
 	//mainfunc.cpp
-	LPPCK_PATH_NODE	GetLastShowNode();
-	BOOL OpenPckFile(TCHAR *lpszFileToOpen = TEXT(""), BOOL isReOpen = FALSE);
+	BOOL OpenPckFile(wchar_t *lpszFileToOpen = L"", BOOL isReOpen = FALSE);
 	VOID SearchPckFiles();
-	VOID ShowPckFiles(LPPCK_PATH_NODE lpNodeToShow);
+	VOID ShowPckFiles(const PCK_UNIFIED_FILE_ENTRY* lpNodeToShow);
 
-
+#pragma region guilated.cpp
+private:
 	//guilated.cpp
 	void		initCommctrls();
 	void		initParams();
 	void		initToolbar();
 	void		initArgument();
+#pragma endregion
 
-
+#pragma region helpfunc.cpp
+private:
 	//helpfunc.cpp
 	VOID ViewFileAttribute();
-	VOID ViewFile();
+	VOID ViewFile(const PCK_UNIFIED_FILE_ENTRY* lpFileEntry);
 	BOOL AddFiles();
 	void AddSetupReg();
 	void DeleteSetupReg();
 
 	void InitLogWindow();
+
+	const PCK_UNIFIED_FILE_ENTRY* GetFileEntryByItem(int itemIndex);
 
 	void DbClickListView(const int itemIndex);	//进入列表中的itemIndex项（进入目录或预览文件）
 	void PopupRightMenu(const int itemIndex);		//listview上右击出菜单
@@ -138,12 +121,20 @@ private:
 	void UnpackAllFiles();					//解压所有文件
 	void UnpackSelectedFiles();				//解压选中的文件
 
+#pragma endregion
+private:
+	//打开、关闭、复原等事件注册
+	static int MyFeedbackCallback(void* pTag, int32_t eventId, size_t wParam, ssize_t lParam);
+
 
 	//listViewFunc.cpp
+
 	BOOL EvNotifyListView(const NMHDR *pNmHdr);
 	BOOL EvDrawItemListView(const DRAWITEMSTRUCT *lpDis);
 
+public:
 	void InsertList(CONST HWND hWndList, CONST INT iIndex, CONST UINT uiMask, CONST INT iImage, CONST LPVOID lParam, CONST INT nColCount, ...);
+private:
 	BOOL InitListView(CONST HWND hWndListView, const LPTSTR *lpszText, const int *icx, const int *ifmt);
 
 	BOOL ListView_BeginLabelEdit(const HWND hWndList, LPARAM lParam);
@@ -154,7 +145,11 @@ private:
 
 	void ProcessColumnClick(CONST HWND hWndList, CONST NMLISTVIEW * pnmlistview, DWORD& dwSortStatus);
 
+
+#pragma region MenuButtonFuncs.cpp
 	//menu
+private:
+	void MenuStrip();
 	void MenuClose();
 	void MenuInfo();
 	void MenuSearch();
@@ -170,6 +165,24 @@ private:
 	void MenuView();
 	void MenuAbout();
 	void ListViewEnter();
+#pragma endregion
+
+#pragma region mainControlStatus.cpp
+
+private:
+	void SetStatusBarText(int iPart, LPCSTR lpszText);
+	void SetStatusBarText(int iPart, LPCWSTR lpszText);
+
+public:
+	void SetStatusBarTitle(LPCWSTR lpszText);
+	void SetStatusBarFileSize(uint64_t size);
+	void SetStatusBarFileCount(uint32_t size);
+	void ClearStatusBarProgress();
+	void SetStatusBarProgress(LPCWSTR lpszText);
+	void SetStatusBarInfo(LPCWSTR lpszText);
+
+#pragma endregion
+
 
 };
 

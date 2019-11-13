@@ -7,6 +7,7 @@
 //
 // Generated from the TEXTINCLUDE 2 resource.
 //
+#include "pck_handle.h"
 #include "winres.h"
 /////////////////////////////////////////////////////////////////////////////
 #undef APSTUDIO_READONLY_SYMBOLS
@@ -24,8 +25,8 @@ LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,26,0,0
- PRODUCTVERSION 1,26,0,0
+ FILEVERSION WINPCK_VERSION_NUMBER
+ PRODUCTVERSION WINPCK_VERSION_NUMBER
  FILEFLAGSMASK 0x37L
 #ifdef _DEBUG
  FILEFLAGS 0x21L
@@ -40,13 +41,13 @@ BEGIN
     BEGIN
         BLOCK "080404b0"
         BEGIN
-            VALUE "FileDescription", "WinPCK"
-            VALUE "FileVersion", "1.26.0.0"
+            VALUE "FileDescription", "WinPCK GUI"
+            VALUE "FileVersion", WINPCK_VERSION
             VALUE "InternalName", "WinPCK"
             VALUE "LegalCopyright", "Copyright (C) 2012-2018 stsm"
             VALUE "OriginalFilename", "WinPCK.exe"
             VALUE "ProductName", "WinPCK"
-            VALUE "ProductVersion", "1.26.0.0"
+            VALUE "ProductVersion", WINPCK_VERSION
             VALUE "SpecialBuild", "WinPCK by stsm"
         END
     END
@@ -72,16 +73,16 @@ LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
 // Dialog
 //
 
-IDD_MAIN DIALOGEX 0, 0, 543, 319
+IDD_MAIN DIALOGEX 0, 0, 617, 367
 STYLE DS_SETFONT | DS_3DLOOK | DS_FIXEDSYS | DS_CENTER | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME
 EXSTYLE WS_EX_ACCEPTFILES | WS_EX_APPWINDOW
 MENU IDR_MENU_MAIN
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
-    CONTROL         "",IDC_LIST,"SysListView32",LVS_REPORT | LVS_SHOWSELALWAYS | LVS_OWNERDRAWFIXED | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,0,36,542,260
-    CONTROL         "",IDC_PROGRESS,"msctls_progress32",WS_BORDER,0,298,542,8
-    CONTROL         "",IDC_STATUS,"msctls_statusbar32",0x0,0,307,542,13
-    CONTROL         "",IDC_TOOLBAR,"ToolbarWindow32",0x2810,0,0,542,36
+    CONTROL         "",IDC_LIST,"SysListView32",LVS_REPORT | LVS_SHOWSELALWAYS | LVS_OWNERDRAWFIXED | LVS_ALIGNLEFT | WS_BORDER | WS_TABSTOP,0,36,616,307
+    CONTROL         "",IDC_PROGRESS,"msctls_progress32",WS_BORDER,0,344,616,8
+    CONTROL         "",IDC_STATUS,"msctls_statusbar32",0x0,0,352,616,13
+    CONTROL         "",IDC_TOOLBAR,"ToolbarWindow32",0x2810,0,0,616,36
 END
 
 IDD_DIALOG_INFO DIALOGEX 0, 0, 268, 153
@@ -206,6 +207,21 @@ BEGIN
     EDITTEXT        IDC_EDIT_RESULT,104,144,101,12,ES_RIGHT | ES_AUTOHSCROLL | ES_READONLY | NOT WS_BORDER
 END
 
+IDD_DIALOG_STRIP DIALOGEX 0, 0, 223, 107
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "PCK文件精简"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "确定",IDOK,170,91,50,14
+    PUSHBUTTON      "取消",IDCANCEL,118,91,50,14
+    LTEXT           "此功能仅用于测试，不得用于商业用途，对于使用此功能造成的后果本程序概不负责，请谨慎使用\n目前可以针对gfx.pck,models.pck,buildings.pck进行精简",IDC_STATIC,2,64,217,26
+    CONTROL         "模型贴图精简",IDC_CHECK_DDS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,7,13,70,12
+    CONTROL         "击中效果精简",IDC_CHECK_ATT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,7,29,70,12
+    GROUPBOX        "选项",IDC_STATIC,2,2,218,60
+    CONTROL         "光影特效精简",IDC_CHECK_GFX,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,7,45,70,12
+    CONTROL         "ECM精简",IDC_CHECK_ECM,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,81,13,70,12
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -217,7 +233,8 @@ GUIDELINES DESIGNINFO
 BEGIN
     IDD_MAIN, DIALOG
     BEGIN
-        BOTTOMMARGIN, 317
+        RIGHTMARGIN, 543
+        BOTTOMMARGIN, 365
     END
 
     IDD_DIALOG_INFO, DIALOG
@@ -273,6 +290,14 @@ BEGIN
         RIGHTMARGIN, 315
         TOPMARGIN, 2
         BOTTOMMARGIN, 157
+    END
+
+    IDD_DIALOG_STRIP, DIALOG
+    BEGIN
+        LEFTMARGIN, 2
+        RIGHTMARGIN, 221
+        TOPMARGIN, 2
+        BOTTOMMARGIN, 105
     END
 END
 #endif    // APSTUDIO_INVOKED
@@ -349,6 +374,7 @@ BEGIN
     POPUP "操作"
     BEGIN
         MENUITEM "添加文件",                        ID_MENU_ADD
+        MENUITEM "游戏精简",                        ID_MENU_SIMPLIFY
         MENUITEM "整理重建",                        ID_MENU_REBUILD
         MENUITEM SEPARATOR
         MENUITEM "附加信息",                        ID_MENU_INFO
@@ -422,15 +448,6 @@ BEGIN
 END
 
 
-/////////////////////////////////////////////////////////////////////////////
-//
-// AFX_DIALOG_LAYOUT
-//
-
-IDD_DIALOG_COMPRESS AFX_DIALOG_LAYOUT
-BEGIN
-    0
-END
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -483,7 +500,7 @@ BEGIN
     IDS_STRING_SEARCHING    "正在查找""%s""，请稍等..."
     IDS_STRING_SEARCHOK     "找到""%s""一共 %u 处"
     IDS_STRING_TIMEROK      "已完成: %u/%u 100.0%%"
-    IDS_STRING_TIMERING     "进度: %u/%u %.1f%% 缓存:%.1f%%"
+    IDS_STRING_TIMERING     "进度: %u/%u %.1f%% 缓存:%s/%s %.1f%%"
     IDS_STRING_LISTHEAD1    "文件名"
     IDS_STRING_LISTHEAD2    "实际大小"
     IDS_STRING_LISTHEAD3    "压缩大小"
@@ -520,6 +537,7 @@ END
 
 2 TEXTINCLUDE 
 BEGIN
+    "#include ""pck_handle.h""\r\n"
     "#include ""winres.h""\0"
 END
 

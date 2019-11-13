@@ -6,42 +6,12 @@
 #include "resource.h"
 #include <tchar.h>
 #include <stdio.h>
-#include "PckHeader.h"
-
-class TLogDlg : public TDlg
-{
-protected:
-
-	//LPPCK_RUNTIME_PARAMS	lpParams;
-	HWND	hWndList;
-	wchar_t	szExePath[MAX_PATH];
-
-	wchar_t*	pszLogFileName();
-	wchar_t*	pszTargetListLog(int iItem);
-
-	int		m_iCurrentHotItem;
-
-
-public:
-	TLogDlg(TWin *_win) : TDlg(IDD_DIALOG_LOG, _win) { }
-	
-	virtual BOOL	EvCommand(WORD wNotifyCode, WORD wID, LPARAM hwndCtl);
-	virtual BOOL	EvCreate(LPARAM lParam);
-	//virtual BOOL	EventScroll(UINT uMsg, int nCode, int nPos, HWND scrollBar);
-	virtual BOOL	EvSize(UINT fwSizeType, WORD nWidth, WORD nHeight);
-	virtual BOOL	EvClose();
-	virtual BOOL	EvNotify(UINT ctlID, NMHDR *pNmHdr);
-
-	HWND	GetListWnd();
-};
+#include "pck_handle.h"
 
 class TInfoDlg : public TDlg
 {
-protected:
-	char	*dirBuf;
-
 public:
-	TInfoDlg(char *_dirBuf, TWin *_win) : TDlg(IDD_DIALOG_INFO, _win) { dirBuf = _dirBuf; }
+	TInfoDlg(TWin *_win) : TDlg(IDD_DIALOG_INFO, _win) {}
 	virtual BOOL	EvCommand(WORD wNotifyCode, WORD wID, LPARAM hwndCtl);
 	virtual BOOL	EvCreate(LPARAM lParam);
 };
@@ -49,22 +19,18 @@ public:
 class TSearchDlg : public TDlg
 {
 protected:
-	char	*dirBuf;
+	wchar_t	*dirBuf;
 
 public:
-	TSearchDlg(char *_dirBuf, TWin *_win) : TDlg(IDD_DIALOG_SEARCH, _win) { dirBuf = _dirBuf; }
+	TSearchDlg(wchar_t *_dirBuf, TWin *_win) : TDlg(IDD_DIALOG_SEARCH, _win) { dirBuf = _dirBuf; }
 	virtual BOOL	EvCommand(WORD wNotifyCode, WORD wID, LPARAM hwndCtl);
 	virtual BOOL	EvCreate(LPARAM lParam);
 };
 
 class TCompressOptDlg : public TDlg
 {
-protected:
-
-	LPPCK_RUNTIME_PARAMS	lpParams;
-
 public:
-	TCompressOptDlg(LPPCK_RUNTIME_PARAMS in, TWin *_win) : TDlg(IDD_DIALOG_COMPRESS, _win) { lpParams = in; }
+	TCompressOptDlg(TWin *_win) : TDlg(IDD_DIALOG_COMPRESS, _win) { }
 	
 	virtual BOOL	EvCommand(WORD wNotifyCode, WORD wID, LPARAM hwndCtl);
 	virtual BOOL	EvCreate(LPARAM lParam);
@@ -74,16 +40,12 @@ public:
 class TAttrDlg : public TDlg
 {
 protected:
-	void	*lpPckInfo;
-	void	*lpRootInfo;
+	const PCK_UNIFIED_FILE_ENTRY*	lpPckInfo;
 
 	wchar_t	*lpszPath;
-	BOOL	isSearchMode;
-
-	QWORD	qwPckFileSize;
 
 public:
-	TAttrDlg(void *_lpPckInfo, void *_lpRootInfo, QWORD _qwPckFileSize, wchar_t *_lpszPath, BOOL _isSearchMode, TWin *_win);
+	TAttrDlg(const PCK_UNIFIED_FILE_ENTRY *_lpPckInfo, wchar_t *_lpszPath, TWin *_win);
 	//~TAttrDlg();
 
 	virtual BOOL	EvCommand(WORD wNotifyCode, WORD wID, LPARAM hwndCtl);
@@ -93,18 +55,17 @@ public:
 
 class TRebuildOptDlg : public TDlg
 {
-protected:
+private:
 
-	LPPCK_RUNTIME_PARAMS	lpParams;
 	TCHAR					szScriptFile[MAX_PATH];
 	BOOL					*lpNeedRecompress;
-
+	TCHAR*					lpszScriptFile;
 public:
-	TRebuildOptDlg(LPPCK_RUNTIME_PARAMS in, BOOL *_lpNeedRecompress, TWin *_win) : \
-		TDlg(IDD_DIALOG_REBUILD_OPT, _win), \
-		lpParams(in), \
-		lpNeedRecompress(_lpNeedRecompress), \
-		isScriptParseSuccess(FALSE)
+	TRebuildOptDlg(TCHAR* _lpszScriptFile, BOOL *_lpNeedRecompress, TWin *_win) :
+		TDlg(IDD_DIALOG_REBUILD_OPT, _win), 
+		lpNeedRecompress(_lpNeedRecompress), 
+		isScriptParseSuccess(FALSE),
+		lpszScriptFile(_lpszScriptFile)
 	{
 		*szScriptFile = 0;
 	}
@@ -115,7 +76,7 @@ public:
 	virtual BOOL	EventScroll(UINT uMsg, int nCode, int nPos, HWND scrollBar);
 	virtual BOOL	EvDropFiles(HDROP hDrop);
 
-protected:
+private:
 
 	void OnOK();
 	BOOL OnOpenClick();
@@ -123,4 +84,23 @@ protected:
 	BOOL ParseScript();
 };
 
+
+class TStripDlg : public TDlg
+{
+private:
+
+	int	*pStripFlag;
+
+public:
+	TStripDlg(int *_pStripFlag, TWin *_win) :
+		TDlg(IDD_DIALOG_STRIP, _win),
+		pStripFlag(_pStripFlag)
+	{}
+
+	virtual BOOL	EvCommand(WORD wNotifyCode, WORD wID, LPARAM hwndCtl);
+	virtual BOOL	EvCreate(LPARAM lParam);
+
+private:
+	void OnOK();
+};
 #endif

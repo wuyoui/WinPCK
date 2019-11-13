@@ -15,14 +15,11 @@
 
 #include "tlib.h"
 #include "resource.h"
-//#include "globals.h"
 #include "winmain.h"
 #include "miscdlg.h"
-#include "PreviewDlg.h"
-//#include <shlobj.h>
-//#include <strsafe.h>
+#include <shlwapi.h>
+#include "tPreviewDlg.h"
 #include <process.h>
-//#include "CharsCodeConv.h"
 #include "OpenSaveDlg.h"
 #include "ShowLogOnDlgListView.h"
 
@@ -32,14 +29,13 @@ inline void CreateAndSetDefaultValue(LPCTSTR pszValueName, LPCTSTR pszValue);
 
 void TInstDlg::UnpackAllFiles()
 {
-	if(m_cPckCenter.IsValidPck()) {
-		if(lpPckParams->cVarParams.bThreadRunning) {
-			lpPckParams->cVarParams.bThreadRunning = FALSE;
+	if(pck_IsValidPck()) {
+		if(pck_isThreadWorking()) {
+			pck_forceBreakThreadWorking();
 			EnableButton(ID_MENU_UNPACK_ALL, FALSE);
 		} else {
 			if(OpenFilesVistaUp(hWnd, m_CurrentPath)) {
-				lpPckParams->cVarParams.dwMTMemoryUsed = 0;
-				SetCurrentDirectory(m_CurrentPath);
+
 				_beginthread(ToExtractAllFiles, 0, this);
 			}
 		}
@@ -48,116 +44,84 @@ void TInstDlg::UnpackAllFiles()
 
 void TInstDlg::UnpackSelectedFiles()
 {
-	if(m_cPckCenter.IsValidPck()) {
-		if(lpPckParams->cVarParams.bThreadRunning) {
-			lpPckParams->cVarParams.bThreadRunning = FALSE;
+	if(pck_IsValidPck()) {
+		if(pck_isThreadWorking()) {
+			pck_forceBreakThreadWorking();
 			EnableButton(ID_MENU_UNPACK_SELECTED, FALSE);
 		} else {
 			if(OpenFilesVistaUp(hWnd, m_CurrentPath)) {
-				lpPckParams->cVarParams.dwMTMemoryUsed = 0;
-				SetCurrentDirectory(m_CurrentPath);
+
 				_beginthread(ToExtractSelectedFiles, 0, this);
 			}
 		}
 	}
 }
 
-void TInstDlg::DbClickListView(const int itemIndex)
+const PCK_UNIFIED_FILE_ENTRY* TInstDlg::GetFileEntryByItem(int itemIndex)
 {
-
-	LVITEM						item;
-	LPPCK_PATH_NODE		lpNodeToShow;
-
-	m_cPckCenter.SetListCurrentHotItem(itemIndex);
+	LVITEM item = { 0 };
 
 	item.mask = LVIF_PARAM;
 	item.iItem = itemIndex;
-	item.iSubItem = 0;
-	item.stateMask = 0;
 	ListView_GetItem(GetDlgItem(IDC_LIST), &item);
+	return (LPPCK_UNIFIED_FILE_ENTRY)item.lParam;
+}
 
-	//isSearchMode = 2 == item.iImage ? TRUE : FALSE;
+void TInstDlg::DbClickListView(const int itemIndex)
+{
+
+	m_iListHotItem = itemIndex;
+
+	const PCK_UNIFIED_FILE_ENTRY* lpFileEntry = GetFileEntryByItem(itemIndex);
+	if (NULL == lpFileEntry)return;
+
+	int entry_type = lpFileEntry->entryType;
 
 	//列表是否是以搜索状态显示
-	if(m_cPckCenter.GetListInSearchMode()) {
-		//memset(&m_PathDirs, 0, sizeof(m_PathDirs));
-		//*m_PathDirs.lpszDirNames = m_PathDirs.szPaths;
-		//m_PathDirs.nDirCount = 0;
+	if(PCK_ENTRY_TYPE_INDEX == entry_type) {
 
 		if(0 != itemIndex) {
-			ViewFile();
+			ViewFile(lpFileEntry);
 			return;
 		}
 	}
 
-	lpNodeToShow = (LPPCK_PATH_NODE)item.lParam;
-
-	if(NULL == lpNodeToShow)return;
+	//目录浏览下root目录下的..不可点
+	if ((PCK_ENTRY_TYPE_ROOT | PCK_ENTRY_TYPE_DOTDOT) == ((PCK_ENTRY_TYPE_ROOT | PCK_ENTRY_TYPE_DOTDOT) & entry_type)) {
+		return;
+	}
 
 	//本级是否是文件夹(NULL=文件夹)
-	if(NULL == lpNodeToShow->lpPckIndexTable) {
-		//是否是上级目录(".."目录)
-		if(NULL == lpNodeToShow->parentfirst) {
-			//进入目录中(下一级)
-			if(NULL != lpNodeToShow->child) {
-				TCHAR **lpCurrentDir = m_PathDirs.lpszDirNames + m_PathDirs.nDirCount;
+	if (PCK_ENTRY_TYPE_FOLDER == (PCK_ENTRY_TYPE_FOLDER & entry_type)) {
 
-#ifdef UNICODE
-				_tcscpy_s(*lpCurrentDir, MAX_PATH - (*lpCurrentDir - *m_PathDirs.lpszDirNames), lpNodeToShow->szName);
-#else
-				CUcs2Ansi cU2A(code_page);
-				strcpy_s(*lpCurrentDir, MAX_PATH - (*lpCurrentDir - *m_PathDirs.lpszDirNames), cU2A.GetString(lpNodeToShow->szName));
-#endif
+		ShowPckFiles(lpFileEntry);
+		pck_getNodeRelativePath(m_FolderBrowsed, lpFileEntry);
 
-				*(lpCurrentDir + 1) = *lpCurrentDir + _tcslen(*lpCurrentDir) + 1;
-
-				m_PathDirs.nDirCount++;
-			}
-
-			ShowPckFiles(lpNodeToShow->child);
-		} else {
-			//上一级
-			m_PathDirs.nDirCount--;
-			TCHAR **lpCurrentDir = m_PathDirs.lpszDirNames + m_PathDirs.nDirCount;
-			memset(*lpCurrentDir, 0, _tcslen(*lpCurrentDir) * sizeof(TCHAR));
-
-			ShowPckFiles(lpNodeToShow->parentfirst);
-		}
-	} else {
-		ViewFile();
+	}
+	else {
+		ViewFile(lpFileEntry);
 	}
 }
 
 void TInstDlg::PopupRightMenu(const int itemIndex)
 {
 
-	LVITEM						item;
-	LPPCK_PATH_NODE		lpNodeToShow;
+	const PCK_UNIFIED_FILE_ENTRY* lpFileEntry = GetFileEntryByItem(itemIndex);
 
-	m_cPckCenter.SetListCurrentHotItem(itemIndex);
+	m_iListHotItem = itemIndex;
 
 	HMENU hMenuRClick = GetSubMenu(LoadMenu(TApp::GetInstance(), MAKEINTRESOURCE(IDR_MENU_RCLICK)), 0);
 
-	item.mask = LVIF_PARAM;
-	item.iItem = itemIndex;
-	item.iSubItem = 0;
-	item.stateMask = 0;
-	ListView_GetItem(GetDlgItem(IDC_LIST), &item);
+	if(PCK_ENTRY_TYPE_INDEX != lpFileEntry->entryType) {
 
-	//isSearchMode = 2 == item.iImage ? TRUE : FALSE;
-
-	if(!m_cPckCenter.GetListInSearchMode()) {
-
-		lpNodeToShow = (LPPCK_PATH_NODE)item.lParam;
-
-		if(NULL == lpNodeToShow || lpPckParams->cVarParams.bThreadRunning) {
+		if(NULL == lpFileEntry || pck_isThreadWorking()) {
 			::EnableMenuItem(hMenuRClick, ID_MENU_VIEW, MF_GRAYED);
 			::EnableMenuItem(hMenuRClick, ID_MENU_RENAME, MF_GRAYED);
 			::EnableMenuItem(hMenuRClick, ID_MENU_DELETE, MF_GRAYED);
 			::EnableMenuItem(hMenuRClick, ID_MENU_UNPACK_SELECTED, MF_GRAYED);
 
 		} else {
-			::EnableMenuItem(hMenuRClick, ID_MENU_VIEW, NULL != lpNodeToShow->lpPckIndexTable ? MF_ENABLED : MF_GRAYED);
+			::EnableMenuItem(hMenuRClick, ID_MENU_VIEW, PCK_ENTRY_TYPE_FOLDER != (PCK_ENTRY_TYPE_FOLDER & lpFileEntry->entryType) ? MF_ENABLED : MF_GRAYED);
 			::EnableMenuItem(hMenuRClick, ID_MENU_RENAME, 0 != itemIndex ? MF_ENABLED : MF_GRAYED);
 			::EnableMenuItem(hMenuRClick, ID_MENU_DELETE, 0 != itemIndex ? MF_ENABLED : MF_GRAYED);
 			::EnableMenuItem(hMenuRClick, ID_MENU_UNPACK_SELECTED, 0 != itemIndex ? MF_ENABLED : MF_GRAYED);
@@ -179,67 +143,35 @@ void TInstDlg::PopupRightMenu(const int itemIndex)
 
 VOID TInstDlg::ViewFileAttribute()
 {
-	if(lpPckParams->cVarParams.bThreadRunning)return;
+	if (0 == m_iListHotItem)return;
+	if(pck_isThreadWorking())return;
 
-	HWND	hWndList = GetDlgItem(IDC_LIST);
-	//int		iHotitem = ListView_GetHotItem(hWndList);
-	int		iHotitem = m_cPckCenter.GetListCurrentHotItem();
+	const PCK_UNIFIED_FILE_ENTRY* lpFileEntry = GetFileEntryByItem(m_iListHotItem);
 
-	if(0 == iHotitem)return;
-
-	LVITEM	item = { 0 };
-
-	item.mask = LVIF_PARAM;
-	item.iItem = iHotitem;
-	ListView_GetItem(hWndList, &item);
-
-
-	if(m_cPckCenter.IsValidPck()) {
+	if(pck_IsValidPck()) {
 		wchar_t	szPath[MAX_PATH_PCK_260];
 
-		m_cPckCenter.GetCurrentNodeString(szPath, m_currentNodeOnShow);
+		pck_getNodeRelativePath(szPath, m_currentNodeOnShow);
 
-		TAttrDlg	dlg((void*)item.lParam, (void*)m_cPckCenter.m_lpPckRootNode, m_cPckCenter.GetPckRedundancyDataSize(), szPath, m_cPckCenter.GetListInSearchMode(), this);
+		TAttrDlg	dlg(lpFileEntry, szPath, this);
 		dlg.Exec();
 	}
 }
 
 
-VOID TInstDlg::ViewFile()
+VOID TInstDlg::ViewFile(const PCK_UNIFIED_FILE_ENTRY* lpFileEntry)
 {
-	if(lpPckParams->cVarParams.bThreadRunning)return;
-
-	HWND	hWndList = GetDlgItem(IDC_LIST);
-	int		iHotitem = m_cPckCenter.GetListCurrentHotItem();
-
-	//LPPCK_PATH_NODE		lpNodeToShow;
-	//LPPCKINDEXTABLE		lpIndexToShow;
-	LPPCKINDEXTABLE		lpPckFileIndexToShow;
-
-	LVITEM	item = { 0 };
-
-	item.mask = LVIF_PARAM;
-	item.iItem = iHotitem;
-	ListView_GetItem(hWndList, &item);
-
-	if(m_cPckCenter.GetListInSearchMode()) {
-		lpPckFileIndexToShow = (LPPCKINDEXTABLE)item.lParam;
-
-	} else {
-		lpPckFileIndexToShow = ((LPPCK_PATH_NODE)item.lParam)->lpPckIndexTable;
-	}
-
-	DWORD dwFilesizeToView = lpPckFileIndexToShow->cFileIndex.dwFileClearTextSize;
+	if(pck_isThreadWorking())return;
 
 	CPriviewInDlg cPreview;
-	cPreview.Show(lpPckFileIndexToShow->cFileIndex.szwFilename, lpPckFileIndexToShow->cFileIndex.dwFileClearTextSize, &m_cPckCenter, lpPckFileIndexToShow, this);
+	cPreview.Show(lpFileEntry, this);
 
 }
 
 BOOL TInstDlg::AddFiles()
 {
 
-	if(lpPckParams->cVarParams.bThreadRunning)return FALSE;
+	if(pck_isThreadWorking())return FALSE;
 
 	if(IDCANCEL == MessageBoxW(L"确定添加文件吗？", L"询问", MB_OKCANCEL | MB_ICONQUESTION | MB_DEFBUTTON2))return FALSE;
 
@@ -251,6 +183,29 @@ BOOL TInstDlg::AddFiles()
 	}
 
 	return FALSE;
+}
+
+int TInstDlg::MyFeedbackCallback(void* pTag, int32_t eventId, size_t wParam, ssize_t lParam)
+{
+	TInstDlg* pThis = (TInstDlg*)pTag;
+
+	wchar_t szTitle[MAX_PATH];
+
+	switch (eventId)
+	{
+	case PCK_FILE_OPEN_SUCESS:
+		swprintf_s(szTitle, L"%s - %s", TEXT(THIS_MAIN_CAPTION), (const wchar_t*)lParam);
+		pThis->SetWindowTextW(szTitle);
+
+		break;
+
+	case PCK_FILE_CLOSE:
+		pThis->SetWindowTextA(THIS_MAIN_CAPTION);
+
+		break;
+	}
+
+	return 0;
 }
 
 
@@ -375,38 +330,90 @@ void TInstDlg::InitLogWindow()
 {
 
 	//Log windows
-	logdlg = new TLogDlg(this);
-	logdlg->Create();
-	SetLogListWnd(logdlg->GetListWnd());
-	SetLogMainWnd(hWnd);
+	//logdlg = new TLogDlg(this);
+	m_logdlg.Create();
+	//SetLogListWnd(logdlg->GetListWnd());
+	//SetLogMainWnd(hWnd);
+
+	//绑定函数
+	LogUnits.setInsertLogFunc(std::bind(&TLogDlg::InsertLogToList, &m_logdlg, std::placeholders::_1, std::placeholders::_2));
+	LogUnits.setSetStatusBarInfoFunc(std::bind(&TInstDlg::SetStatusBarInfo, this, std::placeholders::_1));
 
 	//日志函数绑定
-	m_PckLog.PckClassLog_func_register(PreInsertLogToList);
+	log_regShowFunc(PreInsertLogToList);
 
 	//启动日志
-	m_PckLog.PrintLogI(THIS_NAME \
-		THIS_VERSION \
-		" is started.");
+	pck_logIA(THIS_MAIN_CAPTION " is started.");
 
 }
 
 
 void TInstDlg::RefreshProgress()
 {
-	TCHAR		szString[MAX_PATH];
+	wchar_t		szString[MAX_PATH];
 	INT			iNewPos;
+	wchar_t		szMTMemoryUsed[CHAR_NUM_LEN], szMTMaxMemory[CHAR_NUM_LEN];
 
-	if(0 == lpPckParams->cVarParams.dwUIProgressUpper)lpPckParams->cVarParams.dwUIProgressUpper = 1;
-	iNewPos = (INT)((lpPckParams->cVarParams.dwUIProgress << 10) /
-		lpPckParams->cVarParams.dwUIProgressUpper);
+	DWORD		dwUIProgress = pck_getUIProgress();
+	DWORD		dwUIProgressUpper = pck_getUIProgressUpper();
+	DWORD		dwMTMemoryUsed = pck_getMTMemoryUsed();
+	DWORD		dwMTMaxMemory = pck_getMTMaxMemory();
+
+	if(0 == dwUIProgressUpper)
+		dwUIProgressUpper = 1;
+
+	iNewPos = (INT)((dwUIProgress << 10) / dwUIProgressUpper);
 
 	SendDlgItemMessage(IDC_PROGRESS, PBM_SETPOS, (WPARAM)iNewPos, (LPARAM)0);
 
-	if(lpPckParams->cVarParams.dwUIProgress == lpPckParams->cVarParams.dwUIProgressUpper)
-		_stprintf_s(szString, szTimerProcessedFormatString, lpPckParams->cVarParams.dwUIProgress, lpPckParams->cVarParams.dwUIProgressUpper);
-	else
-		_stprintf_s(szString, szTimerProcessingFormatString, lpPckParams->cVarParams.dwUIProgress, lpPckParams->cVarParams.dwUIProgressUpper, lpPckParams->cVarParams.dwUIProgress * 100.0 / lpPckParams->cVarParams.dwUIProgressUpper, (lpPckParams->cVarParams.dwMTMemoryUsed >> 10) * 100.0 / (lpPckParams->dwMTMaxMemory >> 10));
+	if(nullptr != m_pTaskBarlist)
+		m_pTaskBarlist->SetProgressValue(hWnd, dwUIProgress, dwUIProgressUpper);
 
-	SetStatusBarText(3, szString);
+	//if(dwUIProgress == dwUIProgressUpper)
+	//	swprintf_s(szString, szTimerProcessedFormatString, dwUIProgress, dwUIProgressUpper);
+	//else
+	swprintf_s(
+		szString, 
+		szTimerProcessingFormatString, 
+		dwUIProgress, 
+		dwUIProgressUpper, 
+		dwUIProgress * 100.0 / dwUIProgressUpper,
+		StrFormatByteSizeW(dwMTMemoryUsed, szMTMemoryUsed, CHAR_NUM_LEN),
+		StrFormatByteSizeW(dwMTMaxMemory, szMTMaxMemory, CHAR_NUM_LEN),
+		(dwMTMemoryUsed >> 10) * 100.0 / (dwMTMaxMemory >> 10));
 
+	//SetStatusBarText(3, szString);
+	SetStatusBarProgress(szString);
+}
+
+TCHAR*	TInstDlg::BuildSaveDlgFilterString()
+{
+	static int nPckVersionCount = 0;
+	static TCHAR szSaveDlgFilterString[1024] = { 0 };
+
+	if (pck_getVersionCount() != nPckVersionCount) {
+
+		nPckVersionCount = pck_getVersionCount();
+
+		*szSaveDlgFilterString = 0;
+		TCHAR szPrintf[256];
+
+		for (int i = 0; i < nPckVersionCount; i++) {
+
+			_stprintf_s(szPrintf, TEXT("%sPCK文件(*.pck)|*.pck|"), pck_getVersionNameById(i));
+			_tcscat_s(szSaveDlgFilterString, szPrintf);
+
+		}
+
+		TCHAR *lpszStr = szSaveDlgFilterString;
+		while (*lpszStr) {
+
+			if (TEXT('|') == *lpszStr)
+				*lpszStr = 0;
+			++lpszStr;
+		}
+
+		*lpszStr = 0;
+	}
+	return szSaveDlgFilterString;
 }

@@ -11,7 +11,6 @@
 
 #include "globals.h"
 #include "miscdlg.h"
-#include "PckControlCenter.h"
 #include "OpenSaveDlg.h"
 
 
@@ -24,13 +23,15 @@ BOOL TRebuildOptDlg::EvCreate(LPARAM lParam)
 
 	SendDlgItemMessage(IDC_EDIT_SCRIPT, EM_LIMITTEXT, MAX_PATH, 0);
 
-	SendDlgItemMessage(IDC_SLIDER_LEVEL, TBM_SETRANGE, FALSE, MAKELONG(1, MAX_COMPRESS_LEVEL));
-	SendDlgItemMessage(IDC_SLIDER_LEVEL, TBM_SETPOS, TRUE, (LPARAM)lpParams->dwCompressLevel);
+	SendDlgItemMessage(IDC_SLIDER_LEVEL, TBM_SETRANGE, FALSE, MAKELONG(1, pck_getMaxCompressLevel()));
+	SendDlgItemMessage(IDC_SLIDER_LEVEL, TBM_SETPOS, TRUE, (LPARAM)pck_getCompressLevel());
 
-	SetDlgItemTextA(IDC_STATIC_LEVEL, ultoa(lpParams->dwCompressLevel, szStr, 10));
+	SetDlgItemTextA(IDC_STATIC_LEVEL, ultoa(pck_getCompressLevel(), szStr, 10));
 #ifdef _DEBUG
 	SetDlgItemTextA(IDC_EDIT_SCRIPT, "F:\\!)MyProjects\\VC\\WinPCK\\testpck\\script\\test.txt");
 #endif
+
+	*lpszScriptFile = 0;
 
 	return	TRUE;
 }
@@ -69,16 +70,10 @@ BOOL TRebuildOptDlg::OnOpenClick()
 
 void TRebuildOptDlg::OnOK()
 {
-	DWORD dwCompressLevel = lpParams->dwCompressLevel;
-	lpParams->dwCompressLevel = SendDlgItemMessage(IDC_SLIDER_LEVEL, TBM_GETPOS, 0, 0);
-
-	if(dwCompressLevel != lpParams->dwCompressLevel) {
-		if(lpParams->lpPckControlCenter->IsValidPck())
-			lpParams->lpPckControlCenter->ResetCompressor();
-	}
+	DWORD dwCompressLevel = pck_getCompressLevel();
+	pck_setCompressLevel(SendDlgItemMessage(IDC_SLIDER_LEVEL, TBM_GETPOS, 0, 0));
 
 	*lpNeedRecompress = IsDlgButtonChecked(IDC_CHECK_RECPMPRESS);
-	//GetDlgItemText(IDC_EDIT_SCRIPT, szScriptFile, MAX_PATH);
 
 }
 
@@ -103,9 +98,11 @@ BOOL TRebuildOptDlg::EventScroll(UINT uMsg, int nCode, int nPos, HWND scrollBar)
 BOOL TRebuildOptDlg::ParseScript()
 {
 	GetDlgItemText(IDC_EDIT_SCRIPT, szScriptFile, MAX_PATH);
-	if(isScriptParseSuccess = lpParams->lpPckControlCenter->ParseScript((LPCTSTR)szScriptFile)) {
+	if(isScriptParseSuccess = (WINPCK_OK == pck_TestScript((LPCTSTR)szScriptFile))) {
 
 		SetDlgItemTextA(IDC_EDIT_RESULT, "解析脚本成功");
+		_tcscpy_s(lpszScriptFile, MAX_PATH, szScriptFile);
+
 		::EnableWindow(GetDlgItem(IDOK), TRUE);
 		return TRUE;
 	} else {
